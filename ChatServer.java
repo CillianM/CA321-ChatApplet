@@ -7,6 +7,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 
+
 class ChatServer
 {
     // The default server socket.
@@ -15,15 +16,20 @@ class ChatServer
     private static Socket clientSocket = null;
     private static int clientCount = 0;
     private static ArrayList<ClientThread> threads = new ArrayList<>(Collections.nCopies(10, null));
+    private static MessageBuffer messageBuffer;
+    private static PacketSender sender;
 
     public static void main(String args[]) {
 
         //Default Port
         int portNumber = 7777;
+        messageBuffer = new MessageBuffer();
+        sender = new PacketSender(threads,messageBuffer);
 
         try
         {
             serverSocket = new ServerSocket(portNumber);
+
         }
 
         catch (IOException e)
@@ -31,6 +37,9 @@ class ChatServer
             System.out.println(e);
         }
 
+        //initialise the thread for sending messages
+        Thread senderThread = new Thread(sender);
+        senderThread.start();
 
         //Create a client socket for each connection and  create a new thread for it
         while (true)
@@ -46,11 +55,11 @@ class ChatServer
                 {
                     if (threads.get(i) == null)
                     {
-                        threads.set(i,new ClientThread(clientSocket, threads));
+                        threads.set(i,new ClientThread(clientSocket, threads,messageBuffer));
                         Thread t = new Thread(threads.get(i));
                         t.start();
                         clientCount++;
-                        System.out.println("Clients " + clientCount);
+                        System.out.println("Clients: " + clientCount);
                         break;
                     }
                 }
@@ -63,18 +72,119 @@ class ChatServer
     }
 }
 
-class ClientThread implements Runnable
+class Packet
 {
-    private BufferedReader inputStream = null;
-    private PrintStream outputStream = null;
+    String name;
+    String message;
+    ClientThread client;
+
+    public Packet(ClientThread client, String name, String message)
+    {
+        this.client = client;
+        this.name = name;
+        this.message = message;
+    }
+
+    public String toString()
+    {
+        return name + " says: " + message;
+    }
+}
+
+
+class MessageBuffer
+{
+    ArrayList<Packet> messages;
+    int occupied = 0;
+    int currentIndex;
+
+    public MessageBuffer()
+    {
+        this.messages = new ArrayList<>();
+        currentIndex = 0;
+    }
+
+    synchronized void add(Packet p)
+    {
+            messages.add(p);
+            occupied++;
+            currentIndex++;
+            notifyAll();
+    }
+
+    synchronized Packet remove()
+    {
+        try
+        {
+            while (occupied < 1) wait();
+            currentIndex--;
+            occupied--;
+            return (messages.remove(currentIndex));
+
+        }
+        catch (InterruptedException e)
+        {
+            e.printStackTrace();
+            return null;
+        }
+    }
+}
+
+class PacketSender implements Runnable //consider this the consumer
+{
+    private final ArrayList<ClientThread> clients;
+    private MessageBuffer messageBuffer;
+
+    public PacketSender(ArrayList<ClientThread> clients, MessageBuffer messageBuffer)
+    {
+        this.clients = clients;
+        this.messageBuffer = messageBuffer;
+    }
+
+    @Override
+    public synchronized void run()
+    {
+        try
+        {
+            while (true)
+            {
+                Packet p = messageBuffer.remove();
+
+
+                if(p != null) {
+                    String message = p.toString();
+                    System.out.println("message");
+                    for (int i = 0; i < clients.size(); i++) {
+                        if (clients.get(i) != null && !(clients.get(i).equals(p.client))) {
+                            clients.get(i).outputStream.println(message);
+                        }
+                    }
+                }
+
+            }
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+        }
+
+    }
+}
+
+class ClientThread implements Runnable //consider this the producer
+{
+    BufferedReader inputStream = null;
+    PrintStream outputStream = null;
     private Socket clientSocket = null;
     private final  ArrayList<ClientThread> threads;
     private int maxClientsCount;
     private String name;
     private String quitMsg;
+    private MessageBuffer messageBuffer;
 
-    public ClientThread(Socket clientSocket, ArrayList<ClientThread> threads)
+    public ClientThread(Socket clientSocket, ArrayList<ClientThread> threads, MessageBuffer messageBuffer)
     {
+        this.messageBuffer = messageBuffer;
         this.clientSocket = clientSocket;
         this.threads = threads;
         maxClientsCount = threads.size();
@@ -92,7 +202,7 @@ class ClientThread implements Runnable
         }
     }
 
-    public void run()
+    public synchronized void run()
     {
         int maxClientsCount = this.maxClientsCount;
         ArrayList<ClientThread> threads = this.threads;
@@ -116,13 +226,7 @@ class ClientThread implements Runnable
                 }
                 else
                 {
-                    for (int i = 0; i < maxClientsCount; i++)
-                    {
-                        if (threads.get(i) != null && threads.get(i) != this)
-                        {
-                            threads.get(i).outputStream.println(name + " says: " + line);
-                        }
-                    }
+                    messageBuffer.add(new Packet(this,name,line));
                 }
             }
 
@@ -153,4 +257,8 @@ class ClientThread implements Runnable
 
         }
     }
+
+
+
+
 }

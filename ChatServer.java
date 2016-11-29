@@ -76,9 +76,11 @@ class Packet
 {
     String name;
     String message;
+    ClientThread client;
 
-    public Packet(String name, String message)
+    public Packet(ClientThread client, String name, String message)
     {
+        this.client = client;
         this.name = name;
         this.message = message;
     }
@@ -93,29 +95,36 @@ class Packet
 class MessageBuffer
 {
     ArrayList<Packet> messages;
+    int occupied = 0;
     int currentIndex;
 
-    public
-    MessageBuffer()
+    public MessageBuffer()
     {
-        this.messages = new ArrayList<>(Collections.nCopies(10, null));
+        this.messages = new ArrayList<>();
         currentIndex = 0;
     }
 
     synchronized void add(Packet p)
     {
-        messages.add(p);
-        currentIndex++;
+            messages.add(p);
+            occupied++;
+            currentIndex++;
+            notifyAll();
     }
 
     synchronized Packet remove()
     {
-        if(currentIndex > 0) {
-            currentIndex--;
-            return (messages.remove(currentIndex));
-        }
-        else
+        try
         {
+            while (occupied < 1) wait();
+            currentIndex--;
+            occupied--;
+            return (messages.remove(currentIndex));
+
+        }
+        catch (InterruptedException e)
+        {
+            e.printStackTrace();
             return null;
         }
     }
@@ -144,8 +153,9 @@ class PacketSender implements Runnable //consider this the consumer
 
                 if(p != null) {
                     String message = p.toString();
+                    System.out.println("message");
                     for (int i = 0; i < clients.size(); i++) {
-                        if (clients.get(i) != null) {
+                        if (clients.get(i) != null && !(clients.get(i).equals(p.client))) {
                             clients.get(i).outputStream.println(message);
                         }
                     }
@@ -216,7 +226,7 @@ class ClientThread implements Runnable //consider this the producer
                 }
                 else
                 {
-                    messageBuffer.add(new Packet(name,line));
+                    messageBuffer.add(new Packet(this,name,line));
                 }
             }
 

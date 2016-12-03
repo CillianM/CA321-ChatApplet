@@ -5,8 +5,6 @@ import java.io.PrintStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.Collections;
-
 
 class ChatServer
 {
@@ -14,8 +12,7 @@ class ChatServer
     private static ServerSocket serverSocket = null;
     // The default client socket.
     private static Socket clientSocket = null;
-    private static int clientCount = 0;
-    private static ArrayList<ClientThread> threads = new ArrayList<>(Collections.nCopies(10, null));
+    private static ArrayList<ClientThread> threads = new ArrayList<>();
     private static MessageBuffer messageBuffer;
     private static PacketSender sender;
 
@@ -29,7 +26,6 @@ class ChatServer
         try
         {
             serverSocket = new ServerSocket(portNumber);
-
         }
 
         catch (IOException e)
@@ -37,7 +33,7 @@ class ChatServer
             System.out.println(e);
         }
 
-        //initialise the thread for sending messages
+        //initialise the thread for sending messages to and from clients
         Thread senderThread = new Thread(sender);
         senderThread.start();
 
@@ -48,21 +44,11 @@ class ChatServer
             {
                 //This inputStream a new connection no matter what
                 clientSocket = serverSocket.accept();
-                int i = 0;
-                //Look through the collection of threads and find an empty one
-                int size = threads.size();
-                for (i = 0; i < size; i++)
-                {
-                    if (threads.get(i) == null)
-                    {
-                        threads.set(i,new ClientThread(clientSocket, threads,messageBuffer));
-                        Thread t = new Thread(threads.get(i));
-                        t.start();
-                        clientCount++;
-                        System.out.println("Clients: " + clientCount);
-                        break;
-                    }
-                }
+                ClientThread thread = new ClientThread(clientSocket, threads,messageBuffer);
+                threads.add(thread);
+                Thread t = new Thread(thread);
+                t.start();
+                printActiveClients();
             }
             catch (IOException e)
             {
@@ -70,31 +56,22 @@ class ChatServer
             }
         }
     }
-}
 
-class Packet
-{
-    String name;
-    String message;
-    ClientThread client;
-
-    public Packet(ClientThread client, String name, String message)
+    static void printActiveClients()
     {
-        this.client = client;
-        this.name = name;
-        this.message = message;
-    }
-
-    public String toString()
-    {
-        return name + " says: " + message;
+        int count = 0;
+        for (ClientThread thread : threads) {
+            if (thread != null) {
+                count++;
+            }
+        }
+        System.out.println("Clients: " + count);
     }
 }
-
 
 class MessageBuffer
 {
-    ArrayList<Packet> messages;
+    ArrayList<String> messages;
     int occupied = 0;
     int currentIndex;
 
@@ -104,15 +81,15 @@ class MessageBuffer
         currentIndex = 0;
     }
 
-    synchronized void add(Packet p)
+    synchronized void add(String s)
     {
-            messages.add(p);
-            occupied++;
-            currentIndex++;
-            notifyAll();
+        messages.add(s);
+        occupied++;
+        currentIndex++;
+        notifyAll();
     }
 
-    synchronized Packet remove()
+    synchronized String remove()
     {
         try
         {
@@ -148,17 +125,12 @@ class PacketSender implements Runnable //consider this the consumer
         {
             while (true)
             {
-                Packet p = messageBuffer.remove();
+                String message = messageBuffer.remove();
 
-
-                if(p != null) {
-                    String message = p.toString();
-                    System.out.println("message");
-                    for (int i = 0; i < clients.size(); i++) {
-                        if (clients.get(i) != null && !(clients.get(i).equals(p.client))) {
-                            clients.get(i).outputStream.println(message);
-                        }
-                    }
+                if(message != null) {
+                    clients.stream().filter(client -> client != null).forEach(client -> {
+                        client.outputStream.println(message);
+                    });
                 }
 
             }
@@ -167,7 +139,6 @@ class PacketSender implements Runnable //consider this the consumer
         {
             e.printStackTrace();
         }
-
     }
 }
 
@@ -177,9 +148,7 @@ class ClientThread implements Runnable //consider this the producer
     PrintStream outputStream = null;
     private Socket clientSocket = null;
     private final  ArrayList<ClientThread> threads;
-    private int maxClientsCount;
     private String name;
-    private String quitMsg;
     private MessageBuffer messageBuffer;
 
     public ClientThread(Socket clientSocket, ArrayList<ClientThread> threads, MessageBuffer messageBuffer)
@@ -187,78 +156,70 @@ class ClientThread implements Runnable //consider this the producer
         this.messageBuffer = messageBuffer;
         this.clientSocket = clientSocket;
         this.threads = threads;
-        maxClientsCount = threads.size();
         try
         {
             inputStream = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
             outputStream = new PrintStream(clientSocket.getOutputStream());
             this.name = inputStream.readLine();
-            this.quitMsg = "###" +clientSocket.getRemoteSocketAddress().toString() + "***";
-            this.outputStream.println(quitMsg);
         }
         catch (IOException e)
         {
-
+            e.printStackTrace();
         }
     }
 
     public synchronized void run()
     {
-        int maxClientsCount = this.maxClientsCount;
-        ArrayList<ClientThread> threads = this.threads;
-
         try
         {
+            messageBuffer.add(name + " just joined the chatroom...");
 
-            for (int i = 0; i < maxClientsCount; i++)
-            {
-                if (threads.get(i) != null)
-                {
-                    threads.get(i).outputStream.println(name + " just joined the chatroom...");
-                }
-            }
             while (true)
             {
+
                 String line = inputStream.readLine();
-                if (line.equals(quitMsg))
-                {
-                    break;
-                }
-                else
-                {
-                    messageBuffer.add(new Packet(this,name,line));
-                }
+                messageBuffer.add(name + " says: " + line);
             }
 
-            for (int i = 0; i < maxClientsCount; i++)
-            {
-                if (threads.get(i) != null && threads.get(i) != this)
-                {
-                    threads.get(i).outputStream.println(name + " has just left the chatroom...");
-                }
-            }
 
-            //Remove the users thread
-            for (int i = 0; i < maxClientsCount; i++)
-            {
-                if (threads.get(i) == this)
-                {
-                    threads.set(i,null);
-                }
-            }
-
-            //Close all streams when done
-            inputStream.close();
-            outputStream.close();
-            clientSocket.close();
         }
         catch (IOException e)
         {
+            //Remove the users thread
+            int size = threads.size();
+            for (int i = 0; i < size; i++)
+            {
+                if (threads.get(i) == this)
+                {
+                    threads.remove(i);
+                    break;
+                }
+            }
 
+            messageBuffer.add(name + " has just left the chatroom...");
+            printActiveClients();
+
+            try
+            {
+                inputStream.close();
+                outputStream.close();
+                clientSocket.close();
+            }
+            catch (IOException ie)
+            {
+                e.printStackTrace();
+            }
         }
     }
 
-
-
-
+    void printActiveClients()
+    {
+        int count = 0;
+        for (ClientThread thread : threads) {
+            if (thread != null) {
+                count++;
+            }
+        }
+        System.out.println("Clients: " + count);
+    }
 }

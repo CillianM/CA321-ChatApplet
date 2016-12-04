@@ -38,8 +38,7 @@ class ChatServer {
 			try {
 				//This inputStream a new connection no matter what
 				clientSocket = serverSocket.accept();
-				ClientThread thread = new ClientThread(clientSocket, threads,
-						messageBuffer);
+				ClientThread thread = new ClientThread(clientSocket, threads,messageBuffer);
 				threads.add(thread);
 				Thread t = new Thread(thread);
 				t.start();
@@ -97,8 +96,7 @@ class PacketSender implements Runnable
 	private final ArrayList<ClientThread> clients;
 	private MessageBuffer messageBuffer;
 
-	public PacketSender(ArrayList<ClientThread> clients,
-											MessageBuffer messageBuffer) {
+	public PacketSender(ArrayList<ClientThread> clients, MessageBuffer messageBuffer) {
 		this.clients = clients;
 		this.messageBuffer = messageBuffer;
 	}
@@ -132,15 +130,13 @@ class ClientThread implements Runnable //consider this the producer
 	private String name;
 	private MessageBuffer messageBuffer;
 
-	public ClientThread(Socket clientSocket, ArrayList<ClientThread> threads,
-											MessageBuffer messageBuffer)
+	public ClientThread(Socket clientSocket, ArrayList<ClientThread> threads,MessageBuffer messageBuffer)
 	{
 		this.messageBuffer = messageBuffer;
 		this.clientSocket = clientSocket;
 		this.threads = threads;
 		try {
-			inputStream = new BufferedReader(new InputStreamReader
-					(clientSocket.getInputStream()));
+			inputStream = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
 			outputStream = new PrintStream(clientSocket.getOutputStream());
 			this.name = inputStream.readLine();
 		} catch (IOException e) {

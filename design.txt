@@ -1,0 +1,21 @@
+ChatServer Class:
+This class is is the main chat server.  It listens for new socket connections and makes a thread for each connection (using the ClientThreads class).  Each of these threads are stored in an ArrayList of ClientThreads called threads.
+ChatServer also contains a method to print out the current count of active clients.
+
+
+MessageBuffer Class:
+This is the buffer in our Producer-Consumer model.  The buffer is an ArrayList of strings, and contains synchronized add and remove methods.  The buffer works in a First In First Out manner.
+
+
+PacketSender Class:
+This is the consumer in our Producer-Consumer model.  It takes both of the arraylists for the buffer and the ClientThreads.  It takes the oldest message from the buffer and sends it to every active client in the clients arraylist.
+
+
+ClientThreads Class:
+This is the producer in our Producer-Consumer model. These threads will be created by the ChatServer, and each thread deals with 1 client socket connection.
+Each thread has an input BufferedReacher stream that takes in messages from the client ChatApplet and an output PrintStream that sends messages to the client ChatApplet.
+
+Each ClientThread takes in a reference to the threads arrayList the is created in the ChatServer.  This is so that each ClientThread can remove itself from the ArrayList as it is in the process of terminating its connection in the closeSocket method.
+
+Before a ClientThread adds a message to the MessageBuffer, it firsts prepends the relevant information about itself to that message.  For example, if the client associated with the ClientThread was called Jenny, and if Jenny sent a message saying “hello”, then the ClientThread would prepend “Jenny says: ” to the message “hello”.
+

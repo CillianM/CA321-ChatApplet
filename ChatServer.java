@@ -81,7 +81,7 @@ class MessageBuffer
         currentIndex = 0;
     }
 
-    synchronized void add(String s)
+    synchronized void add(String s) throws InterruptedException
     {
         messages.add(s);
         occupied++;
@@ -89,7 +89,7 @@ class MessageBuffer
         notifyAll();
     }
 
-    synchronized String remove()
+    synchronized String remove() throws InterruptedException
     {
         try
         {
@@ -128,9 +128,11 @@ class PacketSender implements Runnable //consider this the consumer
                 String message = messageBuffer.remove();
 
                 if(message != null) {
-                    clients.stream().filter(client -> client != null).forEach(client -> {
-                        client.outputStream.println(message);
-                    });
+                    for(int i = 0; i < clients.size(); i++)
+                    {
+                        if(clients.get(i) != null)
+                            clients.get(i).outputStream.println(message);
+                    }
                 }
 
             }
@@ -178,37 +180,49 @@ class ClientThread implements Runnable //consider this the producer
             {
 
                 String line = inputStream.readLine();
+                if(line.equals(null)) closeSocket();
                 messageBuffer.add(name + " says: " + line);
             }
 
 
         }
-        catch (IOException e)
+        catch (InterruptedException | IOException | NullPointerException e)
         {
-            //Remove the users thread
-            int size = threads.size();
-            for (int i = 0; i < size; i++)
-            {
-                if (threads.get(i) == this)
-                {
-                    threads.remove(i);
-                    break;
-                }
-            }
+            closeSocket();
+        }
+    }
 
+    void closeSocket()
+    {
+        //Remove the users thread
+        int size = threads.size();
+        for (int i = 0; i < size; i++)
+        {
+            if (threads.get(i) == this)
+            {
+                threads.remove(i);
+                break;
+            }
+        }
+
+
+        printActiveClients();
+
+        try
+        {
             messageBuffer.add(name + " has just left the chatroom...");
-            printActiveClients();
-
-            try
-            {
-                inputStream.close();
-                outputStream.close();
-                clientSocket.close();
-            }
-            catch (IOException ie)
-            {
-                e.printStackTrace();
-            }
+            inputStream.close();
+            outputStream.close();
+            clientSocket.close();
+            return;
+        }
+        catch (IOException ioe)
+        {
+            ioe.printStackTrace();
+        }
+        catch (InterruptedException ine)
+        {
+            return;
         }
     }
 
